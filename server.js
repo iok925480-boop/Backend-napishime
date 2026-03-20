@@ -1,119 +1,87 @@
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
-const cors = require("cors");
-const jwt = require("jsonwebtoken");
-const bcrypt = require("bcrypt");
+const BACKEND_URL = "https://backend-napishime-production.up.railway.app";
 
-const app = express();
+let socket;
+let username = prompt("Enter username");
+let currentChat = "";
+let onlineUsers = [];
 
-// 🔥 ВАЖНО для Railway
-app.set("trust proxy", 1);
-
-app.use(cors({
-  origin: "*",
-  methods: ["GET", "POST"]
-}));
-
-app.use(express.json());
-
-const server = http.createServer(app);
-
-// 🔥 правильный Socket.IO
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  },
-  transports: ["websocket", "polling"]
+// 🔥 фикс подключения
+socket = io(BACKEND_URL, {
+  transports: ["websocket"]
 });
 
-const PORT = process.env.PORT || 3000;
-const SECRET = process.env.SECRET || "supersecret";
-
-// ===== DB =====
-let users = [];
-let messages = [];
-let onlineUsers = {};
-
-// ===== TEST ROUTE =====
-app.get("/", (req, res) => {
-  res.send("Napishime backend running ✅");
+socket.on("connect", () => {
+  console.log("CONNECTED ✅");
 });
 
-// ===== AUTH =====
-app.post("/register", async (req, res) => {
-  const { username, password } = req.body;
+socket.emit("login", username);
 
-  if (users.find(u => u.username === username)) {
-    return res.status(400).send("User exists");
+socket.on("online", (users) => {
+  onlineUsers = users;
+  renderUsers();
+});
+
+socket.on("message", (msg) => {
+  if (msg.from === currentChat) {
+    addMessage(msg.content, false);
   }
-
-  const hash = await bcrypt.hash(password, 10);
-  users.push({ username, password: hash });
-
-  res.send("OK");
 });
 
-app.post("/login", async (req, res) => {
-  const { username, password } = req.body;
+function renderUsers() {
+  users.innerHTML = "";
 
-  const user = users.find(u => u.username === username);
-  if (!user) return res.status(400).send("No user");
+  onlineUsers.forEach(user => {
+    if (user === username) return;
 
-  const valid = await bcrypt.compare(password, user.password);
-  if (!valid) return res.status(400).send("Wrong pass");
+    users.innerHTML += `
+      <div onclick="openChat('${user}')"
+        class="p-2 cursor-pointer hover:bg-gray-800">
+        ${user}
+      </div>
+    `;
+  });
+}
 
-  const token = jwt.sign({ username }, SECRET);
-  res.json({ token });
-});
+async function openChat(user) {
+  currentChat = user;
+  chatWith.innerText = user;
+  messages.innerHTML = "";
 
-// ===== MESSAGES =====
-app.get("/messages/:user", (req, res) => {
-  const me = req.headers.username;
-  const other = req.params.user;
-
-  const chat = messages.filter(
-    m =>
-      (m.from === me && m.to === other) ||
-      (m.from === other && m.to === me)
+  const res = await fetch(
+    BACKEND_URL + "/messages/" + user,
+    {
+      headers: { username }
+    }
   );
 
-  res.json(chat);
-});
+  const data = await res.json();
 
-// ===== SOCKET =====
-io.on("connection", (socket) => {
+  data.forEach(m => {
+    addMessage(m.content, m.from === username);
+  });
+}
 
-  console.log("User connected:", socket.id);
+function send() {
+  const text = msg.value;
+  if (!text) return;
 
-  socket.on("login", (username) => {
-    onlineUsers[username] = socket.id;
-    io.emit("online", Object.keys(onlineUsers));
+  socket.emit("send", {
+    from: username,
+    to: currentChat,
+    content: text
   });
 
-  socket.on("send", ({ from, to, content }) => {
-    messages.push({ from, to, content });
+  addMessage(text, true);
+  msg.value = "";
+}
 
-    if (onlineUsers[to]) {
-      io.to(onlineUsers[to]).emit("message", {
-        from,
-        content
-      });
-    }
-  });
-
-  socket.on("disconnect", () => {
-    for (let user in onlineUsers) {
-      if (onlineUsers[user] === socket.id) {
-        delete onlineUsers[user];
-      }
-    }
-    io.emit("online", Object.keys(onlineUsers));
-  });
-
-});
-
-server.listen(PORT, () => {
-  console.log("Server running on port", PORT);
-});
+function addMessage(text, mine) {
+  messages.innerHTML += `
+    <div class="${mine ? "text-right" : "text-left"}">
+      <span class="inline-block px-3 py-2 rounded
+        ${mine ? "bg-blue-500" : "bg-gray-700"}">
+        ${text}
+      </span>
+    </div>
+  `;
+}
