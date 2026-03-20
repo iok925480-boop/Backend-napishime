@@ -1,4 +1,4 @@
-const BACKEND_URL = "https://backend-napishime-production.up.railway.app";
+const BACKEND_URL = https:"//backend-napishime-uufv.vercel.app";
 
 let socket;
 let username = prompt("Enter username");
