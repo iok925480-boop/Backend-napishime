@@ -85,3 +85,6 @@ function addMessage(text, mine) {
     </div>
   `;
 }
+app.get("/", (req, res) => {
+  res.send("Napishime backend working ✅");
+});
