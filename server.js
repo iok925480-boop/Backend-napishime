@@ -6,21 +6,40 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 
 const app = express();
-app.use(cors());
+
+// 🔥 ВАЖНО для Railway
+app.set("trust proxy", 1);
+
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST"]
+}));
+
 app.use(express.json());
 
 const server = http.createServer(app);
+
+// 🔥 правильный Socket.IO
 const io = new Server(server, {
-  cors: { origin: "*" }
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  },
+  transports: ["websocket", "polling"]
 });
 
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.SECRET || "supersecret";
 
-// ===== MOCK DB =====
+// ===== DB =====
 let users = [];
 let messages = [];
 let onlineUsers = {};
+
+// ===== TEST ROUTE =====
+app.get("/", (req, res) => {
+  res.send("Napishime backend running ✅");
+});
 
 // ===== AUTH =====
 app.post("/register", async (req, res) => {
@@ -63,23 +82,10 @@ app.get("/messages/:user", (req, res) => {
   res.json(chat);
 });
 
-// ===== AI =====
-app.post("/ai", (req, res) => {
-  res.json({
-    reply: "AI: " + req.body.message
-  });
-});
-
-// ===== DELETE ACCOUNT =====
-app.delete("/delete-account", (req, res) => {
-  const username = req.headers.username;
-
-  users = users.filter(u => u.username !== username);
-  res.send("Deleted");
-});
-
 // ===== SOCKET =====
 io.on("connection", (socket) => {
+
+  console.log("User connected:", socket.id);
 
   socket.on("login", (username) => {
     onlineUsers[username] = socket.id;
@@ -95,22 +101,6 @@ io.on("connection", (socket) => {
         content
       });
     }
-  });
-
-  // ===== CALLS =====
-  socket.on("call-user", ({ to, offer }) => {
-    io.to(onlineUsers[to]).emit("incoming-call", {
-      from: socket.id,
-      offer
-    });
-  });
-
-  socket.on("answer-call", ({ to, answer }) => {
-    io.to(to).emit("call-answered", { answer });
-  });
-
-  socket.on("ice-candidate", ({ to, candidate }) => {
-    io.to(to).emit("ice-candidate", candidate);
   });
 
   socket.on("disconnect", () => {
